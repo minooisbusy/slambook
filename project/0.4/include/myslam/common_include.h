@@ -25,8 +25,13 @@
 // for Eigen
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <Eigen/Dense>
+#include <Eigen/SVD>
 using Eigen::Vector2d;
 using Eigen::Vector3d;
+using Eigen::Matrix3d;
+using Eigen::MatrixXf;
+using namespace Eigen;
 
 // for Sophus
 #include <sophus/se3.h>
@@ -38,7 +43,7 @@ using Sophus::SE3;
 #include <opencv2/core/core.hpp>
 using cv::Mat;
 
-// std 
+// std
 #include <vector>
 #include <list>
 #include <memory>
@@ -47,6 +52,60 @@ using cv::Mat;
 #include <set>
 #include <unordered_map>
 #include <map>
+#include <iomanip>
 
-using namespace std; 
+using namespace std;
+#include <utility>
+
+template <typename ...Args>
+struct are_same;
+
+template <typename T>
+struct are_same<T>
+{
+    enum { value = true };
+};
+
+template <typename T, typename... Args>
+struct are_same<T, T, Args...>
+{
+    enum { value = are_same<T, Args...>::value };
+};
+
+template <typename T1, typename T2, typename... Args>
+struct are_same<T1, T2, Args...>
+{
+    enum { value = false };
+};
+
+template<typename T>
+const T& Max(const T& left, const T& right)
+{
+    return left < right ? right : left;
+}
+
+template<typename T, typename... Args>
+const T& Max(const T& left, const Args&... args)
+{
+    static_assert(are_same<T, Args...>::value, "Types are different");
+
+    const T& right = Max(args...);
+    return left < right ? right : left;
+}
+
+template<typename T>
+const T& Min(const T& left, const T& right)
+{
+    return left < right ? left : right;
+}
+
+template<typename T, typename... Args>
+const T& Min(const T& left, const Args&... args)
+{
+    static_assert(are_same<T, Args...>::value, "Types are different");
+
+    const T& right = Min(args...);
+    return left < right ? left : right;
+}
+
 #endif

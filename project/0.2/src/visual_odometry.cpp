@@ -52,16 +52,16 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame )
 {
     switch ( state_ )
     {
-    case INITIALIZING:
+    case INITIALIZING: // 충분한 맵 포인트 획득 할 때까지 초기화 과정
     {
         state_ = OK;
         curr_ = ref_ = frame;
         map_->insertKeyFrame ( frame );
-        // extract features from first frame 
+        // extract features from first frame
         extractKeyPoints();
         computeDescriptors();
-        // compute the 3d position of features in ref frame 
-        setRef3DPoints();
+        // compute the 3d position of features in ref frame
+        setRef3DPoints(); // Triangulation으로 변경
         break;
     }
     case OK:
@@ -69,11 +69,11 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame )
         curr_ = frame;
         extractKeyPoints();
         computeDescriptors();
-        featureMatching();
-        poseEstimationPnP();
+        featureMatching();          // Constant Velocity model의 Tracker로 변경
+        poseEstimationPnP();        // Constant Velocity model의 Tracker로 변경
         if ( checkEstimatedPose() == true ) // a good estimation
         {
-            curr_->T_c_w_ = T_c_r_estimated_ * ref_->T_c_w_;  // T_c_w = T_c_r*T_r_w 
+            curr_->T_c_w_ = T_c_r_estimated_ * ref_->T_c_w_;  // T_c_w = T_c_r*T_r_w
             ref_ = curr_;
             setRef3DPoints();
             num_lost_ = 0;
@@ -115,7 +115,7 @@ void VisualOdometry::computeDescriptors()
 
 void VisualOdometry::featureMatching()
 {
-    // match desp_ref and desp_curr, use OpenCV's brute force match 
+    // match desp_ref and desp_curr, use OpenCV's brute force match
     vector<cv::DMatch> matches;
     cv::BFMatcher matcher ( cv::NORM_HAMMING );
     matcher.match ( descriptors_ref_, descriptors_curr_, matches );
@@ -140,12 +140,12 @@ void VisualOdometry::featureMatching()
 
 void VisualOdometry::setRef3DPoints()
 {
-    // select the features with depth measurements 
+    // select the features with depth measurements
     pts_3d_ref_.clear();
     descriptors_ref_ = Mat();
     for ( size_t i=0; i<keypoints_curr_.size(); i++ )
     {
-        double d = ref_->findDepth(keypoints_curr_[i]);               
+        double d = ref_->findDepth(keypoints_curr_[i]);
         if ( d > 0)
         {
             Vector3d p_cam = ref_->camera_->pixel2camera(
@@ -162,13 +162,13 @@ void VisualOdometry::poseEstimationPnP()
     // construct the 3d 2d observations
     vector<cv::Point3f> pts3d;
     vector<cv::Point2f> pts2d;
-    
+
     for ( cv::DMatch m:feature_matches_ )
     {
         pts3d.push_back( pts_3d_ref_[m.queryIdx] );
         pts2d.push_back( keypoints_curr_[m.trainIdx].pt );
     }
-    
+
     Mat K = ( cv::Mat_<double>(3,3)<<
         ref_->camera_->fx_, 0, ref_->camera_->cx_,
         0, ref_->camera_->fy_, ref_->camera_->cy_,
@@ -179,7 +179,7 @@ void VisualOdometry::poseEstimationPnP()
     num_inliers_ = inliers.rows;
     cout<<"pnp inliers: "<<num_inliers_<<endl;
     T_c_r_estimated_ = SE3(
-        SO3(rvec.at<double>(0,0), rvec.at<double>(1,0), rvec.at<double>(2,0)), 
+        SO3(rvec.at<double>(0,0), rvec.at<double>(1,0), rvec.at<double>(2,0)),
         Vector3d( tvec.at<double>(0,0), tvec.at<double>(1,0), tvec.at<double>(2,0))
     );
 }

@@ -53,9 +53,9 @@ double Frame::findDepth ( const cv::KeyPoint& kp )
     {
         return double(d)/camera_->depth_scale_;
     }
-    else 
+    else
     {
-        // check the nearby points 
+        // check the nearby points
         int dx[4] = {-1,0,1,0};
         int dy[4] = {0,-1,0,1};
         for ( int i=0; i<4; i++ )
@@ -88,9 +88,27 @@ bool Frame::isInFrame ( const Vector3d& pt_world )
     if ( p_cam(2,0)<0 ) return false;
     Vector2d pixel = camera_->world2pixel( pt_world, T_c_w_ );
     // cout<<"P_pixel = "<<pixel.transpose()<<endl<<endl;
-    return pixel(0,0)>0 && pixel(1,0)>0 
-        && pixel(0,0)<color_.cols 
+    return pixel(0,0)>0 && pixel(1,0)>0
+        && pixel(0,0)<color_.cols
         && pixel(1,0)<color_.rows;
 }
+
+Frame& Frame::operator=(Frame && frame)
+{
+    id_ = frame.id_;
+    time_stamp_ = frame.time_stamp_;
+    T_c_w_ = std::move(frame.T_c_w_);
+    camera_ = camera_->get_shared_ptr();
+    color_ = std::move(color_);
+    depth_ = std::move(depth_);
+    is_key_frame_ = frame.is_key_frame_;
+
+    frame.id_=-1;
+    frame.time_stamp_ = -1.f;
+    frame.camera_ = nullptr;
+    is_key_frame_ = false;
+    return *this;
+}
+
 
 }

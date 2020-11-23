@@ -22,14 +22,19 @@
 
 namespace myslam
 {
-    
-Camera::Camera()
+
+Camera::Camera():mK(Mat::eye(3,3,CV_32FC1))
 {
     fx_ = Config::get<float>("camera.fx");
     fy_ = Config::get<float>("camera.fy");
     cx_ = Config::get<float>("camera.cx");
     cy_ = Config::get<float>("camera.cy");
     depth_scale_ = Config::get<float>("camera.depth_scale");
+    mK.at<float>(0,0)=fx_;
+    mK.at<float>(1,1)=fy_;
+    mK.at<float>(0,2)=cx_;
+    mK.at<float>(1,2)=cy_;
+
 }
 
 Vector3d Camera::world2camera ( const Vector3d& p_w, const SE3& T_c_w )

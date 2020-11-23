@@ -6,6 +6,7 @@ add_library( myslam SHARED
     config.cpp
     g2o_types.cpp
     visual_odometry.cpp
+    initializer.cpp
 )
 
 target_link_libraries( myslam
