@@ -25,7 +25,11 @@
 
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/sfm/fundamental.hpp>
+#include <opencv2/xfeatures2d.hpp>
 #include <opencv2/core/eigen.hpp>
+#include <opencv2/xfeatures2d/nonfree.hpp>
+
+#include <stdlib.h>
 
 namespace myslam
 {
@@ -46,6 +50,8 @@ public:
     Frame::Ptr  curr_;      // current frame
 
     cv::Ptr<cv::ORB> orb_;  // orb detector and computer
+    cv::Ptr<cv::xfeatures2d::SurfFeatureDetector> surf_;
+    cv::Ptr<cv::xfeatures2d::SurfDescriptorExtractor> surf_desc_;
     vector<cv::KeyPoint>    keypoints_curr_;    // keypoints in current frame
     vector<cv::KeyPoint>    keypoints_prev_;    // keypoints in current frame
     Mat                     descriptors_curr_;  // descriptor in current frame
@@ -94,23 +100,25 @@ protected:
 
     double getViewAngle( Frame::Ptr frame, MapPoint::Ptr point );
     bool FindMotionFromEssential(const Mat& _E, const Mat& _K,
-                                 vector<cv::Point2d> pts1, vector<cv::Point2d> pts2,
+                                 const vector<cv::Point2d>& pts1, const vector<cv::Point2d>& pts2,
                                  const Mat& inlierMask, SE3 &pose,
                                  vector<Vector3d> &vP3D,vector<bool> vbTriangulated,
                                  float minParallax, int minTriangulated);
-    Vector3d Down(Eigen::Matrix3d& A);
-    Eigen::Matrix3d& Up(const Vector3d& a);
-    Vector3f Down(Eigen::Matrix3f& A);
-    Eigen::Matrix3f& Up(const Vector3f& a);
-    cv::Point3f& Homogenizing(const cv::Point2d& pt);
     int countGoodDecompose(const Eigen::Matrix3d& R, const Eigen::Vector3d t,
-                           const vector<cv::Point2d> pts1,const vector<cv::Point2d> pts2,
+                           const vector<cv::Point2d>& pts1,const vector<cv::Point2d>& pts2,
                            const Mat& inliers, vector<Eigen::Vector3d> &vP3D,
-                           float th2, const Eigen::Matrix3d& K,
+                           const float& th2, const Eigen::Matrix3d& K,
                            vector<bool>& vbGood, float& parallax);
 
     typedef Eigen::Matrix<double,3,4> Projection;
     void Triangulate(const cv::Point2d p1,const cv::Point2d p2, Projection P1, Projection P2, Eigen::Vector3d& p3dC1);
+
+
+    //Fundamental matrix Find
+    void FindFundamental(std::vector<bool> &vbMatchesInliers, float &score,
+                         cv::Mat F21, std::vector<cv::Point2f> src, std::vector<cv::Point2f>dst);
+
+    void Normalize(const vector<cv::Point2f>& pts, vector<cv::Point2f> &res, Mat &T);
 };
 }
 

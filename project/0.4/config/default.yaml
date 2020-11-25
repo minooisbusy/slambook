@@ -11,10 +11,16 @@ dataset_dir: /home/minwoo/datasets/tum/rgbd_dataset_freiburg2_desk
 #camera.cy: 249.7
 
 # fr2
-camera.fx: 520.9
-camera.fy: 521.0
-camera.cx: 325.1
-camera.cy: 249.7
+camera.fx: 520.908620
+camera.fy: 521.007327
+camera.cx: 325.141442
+camera.cy: 249.701764
+
+camera.k1: 0.231222
+camera.k2: -0.784899
+camera.p1: -0.003257
+camera.p2: -0.000105
+camera.k3: 0.917205
 
 camera.depth_scale: 5000
 

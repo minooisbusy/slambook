@@ -8,21 +8,9 @@
 
 #include "myslam/config.h"
 #include "myslam/visual_odometry.h"
-
+using namespace cv;
 int main ( int argc, char** argv )
 {
-    /*
-MatrixXf m = MatrixXf::Random(3,2);
-cout << "Here is the matrix m:" << endl << m << endl;
-JacobiSVD<MatrixXf> svd(m, ComputeThinU | ComputeThinV);
-cout << "Its singular values are:" << endl << svd.singularValues() << endl;
-cout << "Its left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
-cout << "Its right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
-Vector3f rhs(1, 0, 0);
-cout << "Now consider this rhs vector:" << endl << rhs << endl;
-cout << "A least-squares solution of m*x = rhs is:" << endl << svd.solve(rhs) << endl;
-return 0;
-*/
     if ( argc != 2 )
     {
         cout<<"usage: run_vo parameter_file"<<endl;
@@ -55,6 +43,43 @@ return 0;
         if ( fin.good() == false )
             break;
     }
+    // Test code
+    /*
+    Mat src = cv::imread(rgb_files[0]);
+    Mat dst = cv::imread(rgb_files[1]);
+    vector<cv::KeyPoint>    keypoints_curr_;    // keypoints in current frame
+    vector<cv::KeyPoint>    keypoints_prev_;    // keypoints in current frame
+    Mat                     descriptors_curr_;  // descriptor in current frame
+    Mat                     descriptors_prev_;  // descriptor in current frame
+    //cv::Ptr<cv::ORB> orb_=cv::ORB::create(500,1.2,8);  // orb detector and computer
+    cv::Ptr<cv::xfeatures2d::SURF> detector =cv::xfeatures2d::SURF::create(400);
+    detector->detectAndCompute(src, cv::noArray(), keypoints_prev_, descriptors_prev_);
+    detector->detectAndCompute(dst, cv::noArray(), keypoints_curr_, descriptors_curr_);
+
+
+    //-- Step 2: Matching descriptor vectors with a brute force matcher
+    // Since SURF is a floating-point descriptor NORM_L2 is used
+    Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::BRUTEFORCE);
+    std::vector< DMatch > matches;
+    matcher->match( descriptors_prev_, descriptors_curr_, matches );
+    //-- Draw matches
+    Mat img_matches;
+    drawMatches( src, keypoints_prev_, dst, keypoints_curr_, matches, img_matches );
+    size_t sz = std::min(keypoints_curr_.size(), keypoints_prev_.size());
+    sz = matches.size();
+    Mat show = dst.clone();
+    for(size_t t = 0; t < sz; t++)
+    {
+        cv::circle(show,keypoints_curr_[matches[t].trainIdx].pt, 5, cv::Scalar(0,255,0), 1);
+        cv::circle(show,keypoints_prev_[matches[t].queryIdx].pt, 5, cv::Scalar(0,0,255), 1);
+        cv::line(show, keypoints_curr_[matches[t].trainIdx].pt,
+                        keypoints_prev_[matches[t].queryIdx].pt,cv::Scalar(255,255,0), 2);
+    }
+    cv::imshow("src keys",show);        imshow("Matches", img_matches );
+    cv::waitKey(0);
+
+    return 0;
+    */
 
     myslam::Camera::Ptr camera ( new myslam::Camera );
 
