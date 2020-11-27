@@ -77,7 +77,7 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
             }
             else if(curr_ != nullptr && ref_ != nullptr)
             {
-                std        srand(0);::vector<cv::DMatch> good_matches;
+                vector<cv::DMatch> good_matches;
                 cv::Ptr<cv::DescriptorMatcher> matcher =
                  cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
                 std::vector<std::vector<cv::DMatch>> knn_matches;
@@ -92,6 +92,7 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
                     }
                 }
 
+                /*
                 Mat img_matches;
                 cv::drawMatches(ref_->color_, keypoints_prev_,
                                 curr_->color_, keypoints_curr_,
@@ -99,66 +100,63 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
                                 cv::Scalar::all(-1), cv::Scalar::all(-1),
                                 std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                 cv::imshow("Draw Matches", img_matches);
+                */
 
-                /*
                 Mat src = ref_->color_.clone();
                 size_t sz = std::min(keypoints_curr_.size(), keypoints_prev_.size());
                 sz = good_matches.size();
+                cv::RNG rng(0);
                 for(size_t t = 0; t < sz; t++)
                 {
-                    cv::line(src, keypoints_prev_[good_matches[t].queryIdx].pt,
+                    cv::arrowedLine(src, keypoints_prev_[good_matches[t].queryIdx].pt,
                                   keypoints_curr_[good_matches[t].trainIdx].pt,
-                                  cv::Scalar(255,255,0), 2);
+                                  cv::Scalar(rng(256),rng(256),rng(256)), 2);
                 }
-                */
+                cv::imshow("features", src);
 
-                cv::waitKey(10);
-                vector<cv::Point2d> pts1;
-                vector<cv::Point2d> pts2;
+                vector<cv::Point2f> pts1;
+                vector<cv::Point2f> pts2;
                 pts1.reserve(good_matches.size());
                 pts2.reserve(good_matches.size());
                 for(size_t i=0;i < good_matches.size(); i++)
                 {
-                    pts1.push_back(keypoints_prev_[good_matches[i].queryIdx].pt);
-                    pts2.push_back(keypoints_curr_[good_matches[i].trainIdx].pt);
+                    const float x1 = keypoints_prev_[good_matches[i].queryIdx].pt.x;
+                    const float y1 = keypoints_prev_[good_matches[i].queryIdx].pt.y;
+                    const float x2 = keypoints_curr_[good_matches[i].trainIdx].pt.x;
+                    const float y2 = keypoints_curr_[good_matches[i].trainIdx].pt.y;
+
+                    pts1.emplace_back(x1,y1);
+                    pts2.emplace_back(x2,y2);
                 }
-
-                // same test
-                /*
-                for(size_t i=0; i< good_matches.size(); i++)
-                {
-                    float sub1x = pts1[i].x-keypoints_prev_[good_matches[i].queryIdx].pt.x;
-                    float sub1y = pts1[i].y-keypoints_prev_[good_matches[i].queryIdx].pt.y;
-                    float sub2x = pts2[i].x-keypoints_curr_[good_matches[i].trainIdx].pt.x;
-                    float sub2y = pts2[i].y-keypoints_curr_[good_matches[i].trainIdx].pt.y;
-                    float sum = fabsf32(sub1x)+fabsf32(sub1y)+fabsf32(sub2x)+fabsf32(sub2y);
-
-                    if(sum != 0)
-                        {
-                            cout<< i<<"th element is not same"<<endl;
-                            return false;
-                        }
-                }
-                */
-
 
                 double lambda;
                 Mat inlierMask;
-                Mat E = cv::findEssentialMat(pts1,pts2,curr_->camera_->mK,cv::RANSAC,0.999,1.0,inlierMask);
-                vector<Eigen::Vector3d> vP3D;
-                vector<bool> vbTriangulated;
+                //Mat E = cv::findEssentialMat(pts1,pts2,curr_->camera_->mK,cv::RANSAC,0.999,1.0,inlierMask);
+                vector<bool> vbMatchesInliersF;
+                float score=0;
+                Mat F;
+                //FindFundamental(vbMatchesInliersF,score,F, pts1,pts2);
+                F = cv::findFundamentalMat(pts1,pts2,inlierMask,cv::RANSAC);
+                F.convertTo(F,CV_32F);
 
-                if(FindMotionFromEssential(E, curr_->camera_->mK,
+                //Mat lines;
+                drawepipolarlines("Epipolar lines", F, ref_->color_,curr_->color_,
+                                  pts1,pts2);
+
+                //vector<Eigen::Vector3d> vP3D;
+                vector<cv::Point3f> vP3D;
+                vector<bool> vbTriangulated;
+                if(FindMotion(F, curr_->camera_->mK,
                                            pts1, pts2,
-                                           inlierMask, curr_->T_c_w_,
-                                           vP3D, vbTriangulated,
+                                           inlierMask, curr_->T_c_w_, // Output pose
+                                           vP3D, vbTriangulated, // Output Point, boolean
                                            1.0, 50))
                 {
                     std::cout<<"Pose = "<<curr_->T_c_w_.rotation_matrix()<<"\n"<<curr_->T_c_w_.translation()<<std::endl;
                 }
                 else
                 {
-                    return 0;
+                    return false;
                 }
 
 
@@ -168,7 +166,6 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
                     keypoints_prev_.push_back(keypoints_curr_[i]);
                 descriptors_prev_ = descriptors_curr_.clone();
 
-                return false;
             }
 
 
@@ -485,10 +482,12 @@ double VisualOdometry::getViewAngle ( Frame::Ptr frame, MapPoint::Ptr point )
 }
 
 //ReconstructF
-bool VisualOdometry::FindMotionFromEssential(const Mat& _E, const Mat& _K,
-                                 const vector<cv::Point2d>& pts1,const vector<cv::Point2d>& pts2,
+bool VisualOdometry::FindMotion(const Mat& F, const Mat& K,
+                                 const vector<cv::Point2f>& pts1,const vector<cv::Point2f>& pts2,
                                  const Mat& inlierMask, SE3 &pose,
-                                 vector<Vector3d> &vP3D,vector<bool> vbTriangulated,
+                                 //vector<Vector3d> &vP3D,
+                                 vector<cv::Point3f> &vP3D,
+                                 vector<bool> vbTriangulated,
                                  float minParallax, int minTriangulated)
 {
     int N=0;
@@ -501,36 +500,23 @@ bool VisualOdometry::FindMotionFromEssential(const Mat& _E, const Mat& _K,
         }
 
     //Cast cv-Mat to eigen-Matrix
-    Eigen::MatrixXd E(3,3);
-    Eigen::MatrixXd K(3,3);
-    Eigen::MatrixXd Rz1(3,3);
-    Eigen::MatrixXd Rz2(3,3);
-    cv::cv2eigen(_E,E);
-    cv::cv2eigen(_K,K);
-    Rz1 <<  0, -1,  0,
-            1,  0,  0,
-            0,  0,  1;
-    Rz2 = Rz1.transpose();
+    cv::Mat E = K.t()*F*K;
+    /*
+    cv::Mat Rz1 = cv::Mat::eye(3,3,CV_32F);
+    Rz1.at<float>(0,1) = -1;
+    Rz1.at<float>(1,0) = 1;
+    Rz1.at<float>(2,2) = 1;
+    */
+
+    Mat R1, R2, t1, t2;
+    cv::decomposeEssentialMat(E, R1, R2, t1);
+    t2=-t1;
 
 
-    // Decompose E
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(E, ComputeThinU|ComputeThinV);
-    Eigen::MatrixXd U =svd.matrixU();
-    Eigen::MatrixXd V =svd.matrixV();
-    Eigen::MatrixXd S = svd.singularValues().asDiagonal();
-
-    // Compute Candidates
-    Vector3d t1= U.col(2);
-    t1 = t1/t1.norm();
-    Vector3d t2 = -t1;
-
-    Eigen::Matrix3d R1 = U*Rz1*V.transpose();
-    if(R1.determinant()<0) R1=-R1;
-    Eigen::Matrix3d R2 = U*Rz2*V.transpose();
-    if(R2.determinant()<0) R2=-R2;
 
 
-    vector<Eigen::Vector3d> vP3D1, vP3D2, vP3D3, vP3D4;
+    //vector<Eigen::Vector3d> vP3D1, vP3D2, vP3D3, vP3D4;
+    vector<cv::Point3f> vP3D1, vP3D2, vP3D3, vP3D4;
     vector<bool> vbGood1, vbGood2, vbGood3, vbGood4;
     float parallax1, parallax2, parallax3, parallax4;
 
@@ -551,7 +537,6 @@ bool VisualOdometry::FindMotionFromEssential(const Mat& _E, const Mat& _K,
     if(maxGood >0)
     {
         cout<<"maxGood = "<<maxGood<<endl;
-        cv::waitKey(0);
     }
         cout<<"maxGood = "<<maxGood<<endl;
 
@@ -563,82 +548,83 @@ bool VisualOdometry::FindMotionFromEssential(const Mat& _E, const Mat& _K,
     if(nGood3 > .7 * maxGood) nsimilar++;
     if(nGood4 > .7 * maxGood) nsimilar++;
 
+    // If there is not a clear winner (nsimilar > 1)
+    // or not enough triangulated points (maxGood>nMinGood)
+    // reject initialization
     if( maxGood>nMinGood || nsimilar> 1)
     {
-        cout<<"nsimilar = "<<nsimilar<<endl;
-        cout<<"maxGood,,= "<<maxGood<<"<"<<nMinGood<<endl;
-        cv::waitKey(0);
         return false;
-
     }
+    Eigen::Matrix3d R;
+    Eigen::Vector3d t;
     if(maxGood == nGood1 && parallax1 > minParallax)
     {
         vP3D = vP3D1;
         vbTriangulated = std::move(vbGood1);
-        pose = SE3(R1,t1);
-        pose.setRotationMatrix(R1);
-        pose.translation() = t1;
+        cv::cv2eigen(R1, R);
+        cv::cv2eigen(t1, t);
     }
     else if(maxGood == nGood2 && parallax2 > minParallax)
     {
         vP3D = vP3D2;
         vbTriangulated = std::move(vbGood2);
-        pose = SE3(R1,t2);
-        pose.setRotationMatrix(R1);
-        pose.translation() = t2;
+        cv::cv2eigen(R1, R);
+        cv::cv2eigen(t2, t);
     }
     else if(maxGood == nGood3 && parallax3 > minParallax)
     {
         vP3D = vP3D1;
         vbTriangulated = std::move(vbGood3);
-        pose = SE3(R2,t1);
-        pose.setRotationMatrix(R2);
-        pose.translation() = t1;
+        cv::cv2eigen(R2, R);
+        cv::cv2eigen(t1, t);
     }
     else if(maxGood == nGood4 && parallax4 > minParallax)
     {
         vP3D = vP3D1;
         vbTriangulated = std::move(vbGood4);
-        pose = SE3(R2,t2);
-        pose.setRotationMatrix(R2);
-        pose.translation() = t2;
+        cv::cv2eigen(R2, R);
+        cv::cv2eigen(t2, t);
     }
     else
     {
-        return true;
+        return false;
     }
+    pose = SE3(R,t);
 
-    cout<<"rotation in FindMotion = "<<pose.rotation_matrix()<<endl;
-    cout<<"translation in FindMotion = "<<pose.translation()<<endl;
-
-    return false;
+    return true;
 }
-int VisualOdometry::countGoodDecompose(const Eigen::Matrix3d& R, const Eigen::Vector3d t,
-                        const vector<cv::Point2d>& pts1, const vector<cv::Point2d>& pts2,
-                        const Mat& inliers, vector<Eigen::Vector3d> &vP3D,
-                        const float& th2, const Eigen::Matrix3d& K,
+int VisualOdometry::countGoodDecompose(const cv::Mat& R,
+                        const cv::Mat& t,
+                        const vector<cv::Point2f>& pts1,
+                        const vector<cv::Point2f>& pts2,
+                        const Mat& inliers,
+                        //vector<Eigen::Vector3d> &vP3D,
+                        vector<cv::Point3f> &vP3D,
+                        const float& th2,
+                        const cv::Mat& K,
                         vector<bool>& vbGood, float& parallax)
 {
-    cout<<"rotation theta = "<<std::acos((R.trace()-1)/2.0)*180/CV_PI<<endl;
-    const float fx = K(0,0);
-    const float fy = K(1,1);
-    const float cx = K(0,2);
-    const float cy = K(1,2);
-    vbGood = vector<bool>(pts1.size(), false);
-    vP3D.resize(pts1.size());
+    const float fx = K.at<float>(0,0);
+    const float fy = K.at<float>(1,1);
+    const float cx = K.at<float>(0,2);
+    const float cy = K.at<float>(1,2);
     vector<float> vCosParallax;
     vCosParallax.reserve(pts1.size()); //Camera1 Projection Matrix K[I|0]
-    Eigen::Matrix<double, 3, 4> P1 = Matrix<double, 3,4>::Zero();
-    P1.block<3,3>(0,0) = K;
+    vP3D.resize(pts1.size());
+    vbGood = vector<bool>(pts1.size(), false);
+    Mat P1 = cv::Mat::zeros(3,4,CV_32F);
+    Mat P2 = cv::Mat::zeros(3,4,CV_32F);
 
-    Eigen::Vector3d O1(0,0,0);
+    K.copyTo(P1.rowRange(0,3).colRange(0,3));
+    cv::Mat O1 = cv::Mat::zeros(3,1,CV_32F);
 
-    Eigen::Matrix<double, 3, 4> P2= Matrix<double, 3,4>::Zero();
-    P2.block<3,3>(0,0) = R;
-    P2.col(3) = t;
+    R.copyTo(P2.rowRange(0,3).colRange(0,3));
+    t.copyTo(P2.rowRange(0,3).col(3));
+    K.convertTo(K, CV_32F);
     P2 = K*P2;
+    cv::Mat O2 = -R.t()*t;
+    O2.convertTo(O2, CV_32F);
 
-    Eigen::Vector3d O2 = -R.transpose()*t;
 
     int nGood = 0;
 
@@ -646,98 +632,81 @@ int VisualOdometry::countGoodDecompose(const Eigen::Matrix3d& R, const Eigen::Ve
     {
         if(!inliers.at<bool>(i,0)) continue; // Pass outlier;
 
-        const cv::Point2d p1 = pts1[i];
-        const cv::Point2d p2 = pts2[i];
+        const cv::Point2f p1 = pts1[i];
+        const cv::Point2f p2 = pts2[i];
         Eigen::Vector3d p3dC1;
-        Triangulate(p1,p2, P1,P2, p3dC1); // DLT method output is 3D point in Real space 3D
+        cv::Mat cvp3dC1;
 
-        if(!std::isfinite(p3dC1(0)) || !isfinite(p3dC1(1))|| !isfinite(p3dC1(2)))
+        //Triangulate(p1,p2, P1,P2, p3dC1); // DLT method output is 3D point in Real space 3D
+        Triangulate(p1,p2, P1,P2,cvp3dC1 );
+
+        if(!isfinite(cvp3dC1.at<float>(0)) || !isfinite(cvp3dC1.at<float>(1)) || !isfinite(cvp3dC1.at<float>(2)))
         {
-            vbGood[i] = false;
+            vbGood[i]=false;
             continue;
         }
 
         // Check parallax
-        Vector3d normal1 = p3dC1 - O1;
-        float dist1 = normal1.norm();
-        Vector3d normal2 = p3dC1 - O2;
-        float dist2 = normal2.norm();
+        cv::Mat normal1 = cvp3dC1 - O1;
+        float dist1 = cv::norm(normal1);
+
+        cv::Mat normal2 = cvp3dC1 - O2;
+        float dist2 = cv::norm(normal2);
 
         float cosParallax = normal1.dot(normal2)/(dist1*dist2);
 
-        // Check depth in front of first camera (only if enough paralla, as "infinite" points
-        // can easily go to negative depth)
-        if(p3dC1(2) <=0 && cosParallax<0.99998) continue;
+        // Check depth in front of first camera (only if enough parallax, as "infinite" points can easily go to negative depth)
+        if(cvp3dC1.at<float>(2)<=0 && cosParallax<0.99998)
+            continue;
 
-        // Check depth in front of second camera (only if enough paralla, as "infinite" points
-        // can easily go to negative depth)
-        Vector3d p3dC2 = R*p3dC1 + t;
-        if(p3dC2(2) <=0 && cosParallax<0.99998) continue;
+        // Check depth in front of second camera (only if enough parallax, as "infinite" points can easily go to negative depth)
+        cv::Mat p3dC2 = R*cvp3dC1+t;
 
-        // Check reprojection Error in First image
+        if(p3dC2.at<float>(2)<=0 && cosParallax<0.99998)
+            continue;
+
+        // Check reprojection error in first image
         float im1x, im1y;
-        float invZ1 = 1.0f/p3dC1(2);
-        im1x = fx*p3dC1(0)*invZ1 +cx;
-        im1y = fy*p3dC1(1)*invZ1 +cy;
+        float invZ1 = 1.0/cvp3dC1.at<float>(2);
+        im1x = fx*cvp3dC1.at<float>(0)*invZ1+cx;
+        im1y = fy*cvp3dC1.at<float>(1)*invZ1+cy;
 
-        float squareError1 = (im1x-p1.x)*(im1x-p1.x) + (im1y-p1.y)*(im1y-p1.y);
+        float squareError1 = (im1x-p1.x)*(im1x-p1.x)+(im1y-p1.y)*(im1y-p1.y);
 
-        // Check reprojection Error in Second image
+        if(squareError1>th2)
+            continue;
+
+        // Check reprojection error in second image
         float im2x, im2y;
-        float invZ2 = 1.0f/p3dC2(2);
-        im2x = fx*p3dC2(0)*invZ2 +cx;
-        im2y = fy*p3dC2(1)*invZ2 +cy;
-        if(squareError1 > th2)
-        {
-            cout<<i<<": squareError1 test Non-pass: "<<squareError1<<endl;
-            cout<<"Threshold = "<<th2<<endl;
-            cout<<"----3-Dimension Point = ("<<p3dC1<<endl;
-            cout<<"----reprojected point = ("<<im1x<<", "<<im1y<<")"<<endl;
-            cout<<"----correspond  point = ("<<p1.x<<", "<<p1.y<<")\n"<<endl;
+        float invZ2 = 1.0/p3dC2.at<float>(2);
+        im2x = fx*p3dC2.at<float>(0)*invZ2+cx;
+        im2y = fy*p3dC2.at<float>(1)*invZ2+cy;
 
-            cout<<"----3-Dimension Point = ("<<p3dC2<<endl;
-            cout<<"----reprojected point = ("<<im2x<<", "<<im2y<<")"<<endl;
-            cout<<"----correspond  point = ("<<p2.x<<", "<<p2.y<<")"<<endl;
-            cout<<"------------------------------------------------"<<endl;
-            cv::waitKey(0);
+        float squareError2 = (im2x-p2.x)*(im2x-p2.x)+(im2y-p2.y)*(im2y-p2.y);
+
+        if(squareError2>th2)
             continue;
-        }
-        cout<<i<<": squareError1 test pass!!!!!!!!!!!!!!!!!!!: "<<squareError1<<endl;
 
-
-        float squareError2 = (im2x-p2.x)*(im2x-p2.x) + (im2y-p2.y)*(im2y-p2.y);
-
-        if(squareError2 > th2)
-        {
-            cout<<i<<": squareError2 test Non-pass: "<<squareError2<<endl;
-            continue;
-        }
-        cout<<i<<": squareError2 test pass!!!!!!!!!!!!!!!!!!!: "<<squareError2<<endl;
-
-        // Summary
         vCosParallax.push_back(cosParallax);
-        vP3D[i] = Vector3d(p3dC1(0), p3dC1(1), p3dC1(2));
+        vP3D[i] = cv::Point3f(cvp3dC1.at<float>(0),cvp3dC1.at<float>(1),cvp3dC1.at<float>(2));
         nGood++;
 
         if(cosParallax<0.99998)
-        vbGood[i]=true;
+            vbGood[i]=true;
     }
 
-    if(nGood >0)
+    if(nGood>0)
     {
-        sort(vCosParallax.begin(), vCosParallax.end());
+        sort(vCosParallax.begin(),vCosParallax.end());
 
-        size_t idx = min(50, int(vCosParallax.size()-1));
-        parallax = acos(vCosParallax[idx]*180/CV_PI);
+        size_t idx = min(50,int(vCosParallax.size()-1));
+        parallax = acos(vCosParallax[idx])*180/CV_PI;
     }
     else
-    {
-        parallax = 0;
-    }
-
+        parallax=0;
     return nGood;
 }
-    void VisualOdometry::Triangulate(const cv::Point2d p1,const cv::Point2d p2,
+    void VisualOdometry::Triangulate(const cv::Point2f p1,const cv::Point2f p2,
                                      Projection P1, Projection P2,
                                      Eigen::Vector3d& p3dC1)
     {
@@ -749,22 +718,22 @@ int VisualOdometry::countGoodDecompose(const Eigen::Matrix3d& R, const Eigen::Ve
 
 
         Eigen::JacobiSVD<Eigen::MatrixXd> svd(T, ComputeFullU|ComputeFullV);
-        MatrixXd V =svd.matrixV();
-        Vector4d temp (V(3,0),V(3,1),V(3,2),V(3,3));
-        cout<<"P^3 point = "<< temp(0)<<", "<<temp(1)<<", "<<temp(2)<<", "<<temp(3)<<endl;
+        const MatrixXd V =svd.matrixV();
+        const Vector4d temp (V(3,0),V(3,1),V(3,2),V(3,3));
         p3dC1 = Vector3d(temp(0)/temp(3),temp(1)/temp(3), temp(2)/temp(3));
     }
 
 void VisualOdometry::FindFundamental(std::vector<bool> &vbMatchesInliers, float &score,
-                        cv::Mat F21, std::vector<cv::Point2f> src, std::vector<cv::Point2f>dst)
-    {
+                        cv::Mat &F21, std::vector<cv::Point2f> &src, std::vector<cv::Point2f> &dst)
+{
+        const int N = src.size();
         vector<vector<size_t>> mvSets;
-        const int maxIteration = 200;
+        const int maxIteration = 500;
         vector<size_t> vAllindices;
         vAllindices.reserve(N);
         vector<size_t> vAvailableIndices;
 
-
+        score = 0;
         for(size_t i=0; i<N; i++)
         {
             vAllindices.push_back(i);
@@ -790,7 +759,7 @@ void VisualOdometry::FindFundamental(std::vector<bool> &vbMatchesInliers, float 
         }
 
         // Launch threads to compute in parallal a fundamental matrix and a homography
-        const int N = vbMatchesInliers.size();
+        //const int N = vbMatchesInliers.size();
 
         // Normalize Coordinates
         vector<cv::Point2f> vPn1, vPn2;
@@ -819,15 +788,14 @@ void VisualOdometry::FindFundamental(std::vector<bool> &vbMatchesInliers, float 
         {
             int idx = mvSets[it][j];
 
-            vPn1i[j] = vPn1[mvMatches12[idx].first]; // i don't input match info just point pair set
-            vPn2i[j] = vPn2[mvMatches12[idx].second];
+            vPn1i[j] = vPn1[j]; // i don't input match info just point pair set
+            vPn2i[j] = vPn2[j];
         }
 
         cv::Mat Fn = ComputeF21(vPn1i,vPn2i);
-
         F21i = T2t*Fn*T1;
 
-        currentScore = CheckFundamental(F21i, vbCurrentInliers, mSigma);
+        currentScore = CheckFundamental(F21i, vbCurrentInliers,src, dst, 1.0);//msigma = 1.0
 
         if(currentScore>score)
         {
@@ -835,11 +803,12 @@ void VisualOdometry::FindFundamental(std::vector<bool> &vbMatchesInliers, float 
             vbMatchesInliers = vbCurrentInliers;
             score = currentScore;
         }
-
-
     }
+
+
+}
 void VisualOdometry::Normalize(const vector<cv::Point2f>& pts, vector<cv::Point2f> &res, Mat &T)
-    {
+{
         float meanX = 0;
         float meanY = 0;
         const int N = pts.size();
@@ -883,5 +852,211 @@ void VisualOdometry::Normalize(const vector<cv::Point2f>& pts, vector<cv::Point2
         T.at<float>(1,1) = sY;
         T.at<float>(0,2) = -meanX*sX;
         T.at<float>(1,2) = -meanY*sY;
+}
+
+cv::Mat VisualOdometry::ComputeF21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2)
+{
+    const int N = vP1.size();
+
+    cv::Mat A(N, 9, CV_32F);
+
+    for(size_t i=0; i<N; i++)
+    {
+        const float u1 = vP1[i].x;
+        const float v1 = vP1[i].y;
+        const float u2 = vP2[i].x;
+        const float v2 = vP2[i].y;
+
+        A.at<float>(i,0) = u2*u1;
+        A.at<float>(i,1) = u2*v1;
+        A.at<float>(i,2) = u2;
+        A.at<float>(i,3) = v2*u1;
+        A.at<float>(i,4) = v2*v1;
+        A.at<float>(i,5) = v2;
+        A.at<float>(i,6) = u1;
+        A.at<float>(i,7) = v1;
+        A.at<float>(i,8) = 1;
     }
+
+    cv::Mat u,w,vt;
+
+    cv::SVDecomp(A,w,u,vt,cv::SVD::MODIFY_A | cv::SVD::FULL_UV);
+
+    cv::Mat Fpre = vt.row(8).reshape(0, 3);
+
+    cv::SVDecomp(Fpre,w,u,vt,cv::SVD::MODIFY_A | cv::SVD::FULL_UV);
+
+    w.at<float>(2)=0;
+
+    return  u*cv::Mat::diag(w)*vt;
+}
+float VisualOdometry::CheckFundamental(const cv::Mat &F21, vector<bool> &vbMatchesInliers,
+                                       const vector<cv::Point2f> &mvKeys1, const vector<cv::Point2f> &mvKeys2,
+                                        float sigma)
+{
+    const int N = mvKeys1.size();
+
+    const float f11 = F21.at<float>(0,0);
+    const float f12 = F21.at<float>(0,1);
+    const float f13 = F21.at<float>(0,2);
+    const float f21 = F21.at<float>(1,0);
+    const float f22 = F21.at<float>(1,1);
+    const float f23 = F21.at<float>(1,2);
+    const float f31 = F21.at<float>(2,0);
+    const float f32 = F21.at<float>(2,1);
+    const float f33 = F21.at<float>(2,2);
+
+    vbMatchesInliers.resize(N);
+
+    float score = 0;
+
+    const float th = 3.841;
+    const float thScore = 5.991;
+
+    const float invSigmaSquare = 1.0/(sigma*sigma);
+
+    for(int i=0; i<N; i++)
+    {
+        bool bIn = true;
+
+        const cv::Point2f &kp1 = mvKeys1[i];
+        const cv::Point2f &kp2 = mvKeys2[i];
+
+        const float u1 = kp1.x;
+        const float v1 = kp1.y;
+        const float u2 = kp2.x;
+        const float v2 = kp2.y;
+
+        // Reprojection error in second image
+        // l2=F21x1=(a2,b2,c2)
+
+        const float a2 = f11*u1+f12*v1+f13;
+        const float b2 = f21*u1+f22*v1+f23;
+        const float c2 = f31*u1+f32*v1+f33;
+
+        const float num2 = a2*u2+b2*v2+c2;
+
+        const float squareDist1 = num2*num2/(a2*a2+b2*b2);
+
+        const float chiSquare1 = squareDist1*invSigmaSquare;
+
+        if(chiSquare1>th)
+            bIn = false;
+        else
+            score += thScore - chiSquare1;
+
+        // Reprojection error in second image
+        // l1 =x2tF21=(a1,b1,c1)
+
+        const float a1 = f11*u2+f21*v2+f31;
+        const float b1 = f12*u2+f22*v2+f32;
+        const float c1 = f13*u2+f23*v2+f33;
+
+        const float num1 = a1*u1+b1*v1+c1;
+
+        const float squareDist2 = num1*num1/(a1*a1+b1*b1);
+
+        const float chiSquare2 = squareDist2*invSigmaSquare;
+
+        if(chiSquare2>th)
+            bIn = false;
+        else
+            score += thScore - chiSquare2;
+
+        if(bIn)
+            vbMatchesInliers[i]=true;
+        else
+            vbMatchesInliers[i]=false;
+    }
+
+    return score;
+}
+Vector3d VisualOdometry::Down(Eigen::Matrix3d M)
+{
+    return Vector3d(M(2,1),M(0,2),M(2,0));
+}
+void VisualOdometry::drawepipolarlines(const std::string& title, const cv::Mat &F,
+                const cv::Mat& img1, const cv::Mat& img2,
+                const std::vector<cv::Point2f> points1,
+                const std::vector<cv::Point2f> points2,
+                const float inlierDistance)
+{
+  CV_Assert(img1.size() == img2.size() && img1.type() == img2.type());
+  cv::Mat outImg(img1.rows, img1.cols*2, CV_8UC3);
+  cv::Rect rect1(0,0, img1.cols, img1.rows);
+  cv::Rect rect2(img1.cols, 0, img1.cols, img1.rows);
+  /*
+   * Allow color drawing
+   */
+  if (img1.type() == CV_8U)
+  {
+    cv::cvtColor(img1, outImg(rect1), cv::COLOR_GRAY2BGR);
+    cv::cvtColor(img2, outImg(rect2), cv::COLOR_GRAY2BGR);
+  }
+  else
+  {
+    img1.copyTo(outImg(rect1));
+    img2.copyTo(outImg(rect2));
+  }
+  std::vector<cv::Point3f> epilines1, epilines2;
+  cv::computeCorrespondEpilines(points1, 1, F, epilines1); //Index starts with 1
+  cv::computeCorrespondEpilines(points2, 2, F, epilines2);
+
+  CV_Assert(points1.size() == points2.size() &&
+        points2.size() == epilines1.size() &&
+        epilines1.size() == epilines2.size());
+
+  cv::RNG rng(0);
+  for(size_t i=0; i<points1.size(); i++)
+  {
+    if(inlierDistance > 0)
+    {
+      if(distancePointLine(points1[i], epilines2[i]) > inlierDistance||
+        distancePointLine(points2[i], epilines1[i]) > inlierDistance)
+      {
+        //The point match is no inlier
+        continue;
+      }
+    }
+    /*
+     * Epipolar lines of the 1st point set are drawn in the 2nd image and vice-versa
+     */
+    cv::Scalar color(rng(256),rng(256),rng(256));
+
+    cv::line(outImg(rect2),
+      cv::Point(0,-epilines1[i].z/epilines1[i].y),
+      cv::Point(img1.cols,-(epilines1[i].z+epilines1[i].x*img1.cols)/epilines1[i].y),
+      color);
+    cv::circle(outImg(rect1), points1[i], 3, color, -1);
+
+    cv::line(outImg(rect1),
+      cv::Point(0,-epilines2[i].z/epilines2[i].y),
+      cv::Point(img2.cols,-(epilines2[i].z+epilines2[i].x*img2.cols)/epilines2[i].y),
+      color);
+    cv::circle(outImg(rect2), points2[i], 3, color, -1);
+  }
+  cv::imshow(title, outImg);
+}
+
+float VisualOdometry::distancePointLine(const cv::Point2f& point, const cv::Point3f& line)
+{
+  //Line is given as a*x + b*y + c = 0
+  return std::fabs(line.x*point.x + line.y*point.y + line.z)
+      / std::sqrt(line.x*line.x+line.y*line.y);
+}
+void VisualOdometry::Triangulate(const cv::Point2f &p1, const cv::Point2f &p2, const cv::Mat &P1, const cv::Mat &P2, Mat &x3D)
+{
+    cv::Mat A(4,4,CV_32F);
+    A.row(0) = p1.x*P1.row(2)-P1.row(0);
+    A.row(1) = p1.y*P1.row(2)-P1.row(1);
+    A.row(2) = p2.x*P2.row(2)-P2.row(0);
+    A.row(3) = p2.y*P2.row(2)-P2.row(1);
+
+    cv::Mat u,w,vt;
+    cv::SVD::compute(A,w,u,vt,cv::SVD::MODIFY_A| cv::SVD::FULL_UV);
+    x3D = vt.row(3).t();
+    x3D = x3D.rowRange(0,3)/x3D.at<float>(3);
+    x3D.convertTo(x3D, CV_32F);
+}
+
 }

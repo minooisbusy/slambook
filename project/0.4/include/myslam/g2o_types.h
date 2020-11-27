@@ -40,9 +40,9 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
     virtual void computeError();
     virtual void linearizeOplus();
-    virtual bool read( std::istream& in ){}
-    virtual bool write( std::ostream& out) const {}
-    
+    virtual bool read( std::istream& in ){return false;}
+    virtual bool write( std::ostream& out) const {return false;}
+
 };
 
 // only to optimize the pose, no point
@@ -53,10 +53,10 @@ public:
     // Error: measure = R*point+t
     virtual void computeError();
     virtual void linearizeOplus();
-    
-    virtual bool read( std::istream& in ){}
-    virtual bool write( std::ostream& out) const {}
-    
+
+    virtual bool read( std::istream& in ){return false;}
+    virtual bool write( std::ostream& out) const {return false;}
+
     Vector3d point_;
 };
 
@@ -64,13 +64,13 @@ class EdgeProjectXYZ2UVPoseOnly: public g2o::BaseUnaryEdge<2, Eigen::Vector2d, g
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
+
     virtual void computeError();
     virtual void linearizeOplus();
-    
-    virtual bool read( std::istream& in ){}
-    virtual bool write(std::ostream& os) const {};
-    
+
+    virtual bool read( std::istream& in ){return false;}
+    virtual bool write(std::ostream& os) const {return false;}
+
     Vector3d point_;
     Camera* camera_;
 };

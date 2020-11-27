@@ -99,26 +99,46 @@ protected:
     bool checkKeyFrame();
 
     double getViewAngle( Frame::Ptr frame, MapPoint::Ptr point );
-    bool FindMotionFromEssential(const Mat& _E, const Mat& _K,
-                                 const vector<cv::Point2d>& pts1, const vector<cv::Point2d>& pts2,
+    bool FindMotion(const Mat& F, const Mat& K,
+                                 const vector<cv::Point2f>& pts1, const vector<cv::Point2f>& pts2,
                                  const Mat& inlierMask, SE3 &pose,
-                                 vector<Vector3d> &vP3D,vector<bool> vbTriangulated,
+                                 //vector<Vector3d> &vP3D,
+                                 vector<cv::Point3f> &vP3D,
+                                 vector<bool> vbTriangulated,
                                  float minParallax, int minTriangulated);
-    int countGoodDecompose(const Eigen::Matrix3d& R, const Eigen::Vector3d t,
-                           const vector<cv::Point2d>& pts1,const vector<cv::Point2d>& pts2,
-                           const Mat& inliers, vector<Eigen::Vector3d> &vP3D,
-                           const float& th2, const Eigen::Matrix3d& K,
+
+    int countGoodDecompose(const cv::Mat& R,
+                           const cv::Mat& t,
+                           const vector<cv::Point2f>& pts1,
+                           const vector<cv::Point2f>& pts2,
+                           const Mat& inliers,
+                           //vector<Eigen::Vector3d> &vP3D,
+                           vector<cv::Point3f> &vP3D,
+                           const float& th2,
+                           const cv::Mat& K,
                            vector<bool>& vbGood, float& parallax);
 
     typedef Eigen::Matrix<double,3,4> Projection;
-    void Triangulate(const cv::Point2d p1,const cv::Point2d p2, Projection P1, Projection P2, Eigen::Vector3d& p3dC1);
+    void Triangulate(const cv::Point2f p1,const cv::Point2f p2, Projection P1, Projection P2, Eigen::Vector3d& p3dC1);
 
 
     //Fundamental matrix Find
     void FindFundamental(std::vector<bool> &vbMatchesInliers, float &score,
-                         cv::Mat F21, std::vector<cv::Point2f> src, std::vector<cv::Point2f>dst);
+                         cv::Mat &F21, std::vector<cv::Point2f> &src, std::vector<cv::Point2f> &dst);
 
     void Normalize(const vector<cv::Point2f>& pts, vector<cv::Point2f> &res, Mat &T);
+    cv::Mat ComputeF21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
+    float CheckFundamental(const cv::Mat &F21, vector<bool> &vbMatchesInliers,
+                                       const vector<cv::Point2f> &mvKeys1, const vector<cv::Point2f> &mvKeys2,
+                                        float sigma);
+    Vector3d Down(Eigen::Matrix3d M);
+void drawepipolarlines(const std::string& title, const cv::Mat &F,
+                const cv::Mat& img1, const cv::Mat& img2,
+                const std::vector<cv::Point2f> points1,
+                const std::vector<cv::Point2f> points2,
+                const float inlierDistance = -1);
+float distancePointLine(const cv::Point2f& point, const cv::Point3f& line);
+void Triangulate(const cv::Point2f &p1, const cv::Point2f &p2, const cv::Mat &P1, const cv::Mat &P2, Mat &x3D);
 };
 }
 
