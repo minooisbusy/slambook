@@ -32,6 +32,7 @@ public:
     typedef shared_ptr<Map> Ptr;
     unordered_map<unsigned long, MapPoint::Ptr >  map_points_;        // all landmarks
     unordered_map<unsigned long, Frame::Ptr >     keyframes_;         // all key-frames
+    vector<cv::Point2f> iniKeys_;
 
     Map() {}
 

@@ -43,43 +43,6 @@ int main ( int argc, char** argv )
         if ( fin.good() == false )
             break;
     }
-    // Test code
-    /*
-    Mat src = cv::imread(rgb_files[0]);
-    Mat dst = cv::imread(rgb_files[1]);
-    vector<cv::KeyPoint>    keypoints_curr_;    // keypoints in current frame
-    vector<cv::KeyPoint>    keypoints_prev_;    // keypoints in current frame
-    Mat                     descriptors_curr_;  // descriptor in current frame
-    Mat                     descriptors_prev_;  // descriptor in current frame
-    //cv::Ptr<cv::ORB> orb_=cv::ORB::create(500,1.2,8);  // orb detector and computer
-    cv::Ptr<cv::xfeatures2d::SURF> detector =cv::xfeatures2d::SURF::create(400);
-    detector->detectAndCompute(src, cv::noArray(), keypoints_prev_, descriptors_prev_);
-    detector->detectAndCompute(dst, cv::noArray(), keypoints_curr_, descriptors_curr_);
-
-
-    //-- Step 2: Matching descriptor vectors with a brute force matcher
-    // Since SURF is a floating-point descriptor NORM_L2 is used
-    Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::BRUTEFORCE);
-    std::vector< DMatch > matches;
-    matcher->match( descriptors_prev_, descriptors_curr_, matches );
-    //-- Draw matches
-    Mat img_matches;
-    drawMatches( src, keypoints_prev_, dst, keypoints_curr_, matches, img_matches );
-    size_t sz = std::min(keypoints_curr_.size(), keypoints_prev_.size());
-    sz = matches.size();
-    Mat show = dst.clone();
-    for(size_t t = 0; t < sz; t++)
-    {
-        cv::circle(show,keypoints_curr_[matches[t].trainIdx].pt, 5, cv::Scalar(0,255,0), 1);
-        cv::circle(show,keypoints_prev_[matches[t].queryIdx].pt, 5, cv::Scalar(0,0,255), 1);
-        cv::line(show, keypoints_curr_[matches[t].trainIdx].pt,
-                        keypoints_prev_[matches[t].queryIdx].pt,cv::Scalar(255,255,0), 2);
-    }
-    cv::imshow("src keys",show);        imshow("Matches", img_matches );
-    cv::waitKey(0);
-
-    return 0;
-    */
 
     myslam::Camera::Ptr camera ( new myslam::Camera );
 
@@ -96,21 +59,31 @@ int main ( int argc, char** argv )
     vis.showWidget ( "Camera", camera_coor );
 
     cout<<"read total "<<rgb_files.size() <<" entries"<<endl;
+    bool bFirst = true;
     for ( int i=0; i<rgb_files.size(); i++ )
     {
+        if(i%5 != 0 && !bFirst)
+        {
+            continue;
+        }
+        else
+        {
+            bFirst = false;
+        }
         cout<<"****** loop "<<i<<" ******"<<endl;
         Mat color = cv::imread ( rgb_files[i] );
-        Mat depth = cv::imread ( depth_files[i], -1 );
+        Mat depth = cv::imread ( depth_files[i], -1 ); // don't care
         if ( color.data==nullptr || depth.data==nullptr )
             break;
-        myslam::Frame::Ptr pFrame = myslam::Frame::createFrame();
+        myslam::Frame::Ptr pFrame = myslam::Frame::createFrame();//count 1
         pFrame->camera_ = camera;
         pFrame->color_ = color;
         pFrame->depth_ = depth;
         pFrame->time_stamp_ = rgb_times[i];
 
         boost::timer timer;
-        if(!vo->addFrame ( pFrame ))
+
+        if(!vo->addFrame ( pFrame )) // Start main module
             continue;
 
         cout<<"VO costs time: "<<timer.elapsed() <<endl;

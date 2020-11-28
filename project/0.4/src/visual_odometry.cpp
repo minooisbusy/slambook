@@ -31,7 +31,7 @@ namespace myslam
 {
 
 VisualOdometry::VisualOdometry() :
-    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ ( new Map ), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
+    state_ ( INITIALIZING ), InitialFrame_(nullptr), ref_ ( nullptr ), curr_ ( nullptr ), map_ ( new Map ), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
 {
     matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
     num_of_features_    = Config::get<int> ( "number_of_features" );
@@ -44,8 +44,6 @@ VisualOdometry::VisualOdometry() :
     key_frame_min_trans = Config::get<double> ( "keyframe_translation" );
     map_point_erase_ratio_ = Config::get<double> ( "map_point_erase_ratio" );
     orb_ = cv::ORB::create ( num_of_features_, scale_factor_, level_pyramid_ );
-    surf_ = cv::xfeatures2d::SurfFeatureDetector::create();
-    surf_desc_ = cv::xfeatures2d::SurfDescriptorExtractor::create();
     srand(0);
 }
 
@@ -54,29 +52,31 @@ VisualOdometry::~VisualOdometry()
 
 }
 
-bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
+bool VisualOdometry::addFrame (Frame::Ptr frame/*count 2*/ ) //Tracking module
 {
     switch ( state_ )
     {
     case INITIALIZING:
     {
-        curr_ = frame;
+        curr_ = frame;// This pointer count 3
         // extract features from first frame and add them into map
         extractKeyPoints();
         if(keypoints_curr_.size() > 100)
         {
             computeDescriptors();
-            if(ref_ == nullptr)
+            if(InitialFrame_ == nullptr)
             {
-                ref_ = curr_;
+                InitialFrame_ = frame; // count 4
                 keypoints_prev_.clear();
-                for(int i=0; i< keypoints_curr_.size();i++)
-                    keypoints_prev_.push_back(keypoints_curr_[i]);
-                descriptors_prev_ = descriptors_curr_.clone();
+                keypoints_prev_ = std::move(keypoints_curr_);
+                //for(int i=0; i< keypoints_curr_.size();i++)
+                //    keypoints_prev_.push_back(keypoints_curr_[i]);
+                descriptors_prev_ = std::move(descriptors_curr_); // opencv 4.x supports move constructor and =operator for Mat class
                 return false;
             }
-            else if(curr_ != nullptr && ref_ != nullptr)
+            else if(curr_ != nullptr && InitialFrame_ != nullptr)
             {
+                // Feature Matching
                 vector<cv::DMatch> good_matches;
                 cv::Ptr<cv::DescriptorMatcher> matcher =
                  cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
@@ -92,17 +92,14 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
                     }
                 }
 
-                /*
-                Mat img_matches;
-                cv::drawMatches(ref_->color_, keypoints_prev_,
-                                curr_->color_, keypoints_curr_,
-                                good_matches, img_matches,
-                                cv::Scalar::all(-1), cv::Scalar::all(-1),
-                                std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                cv::imshow("Draw Matches", img_matches);
-                */
+                if(good_matches.size() < 10)
+                {
+                    InitialFrame_ = curr_;
+                    return false;
+                }
 
-                Mat src = ref_->color_.clone();
+                //Show Feature result
+                Mat src = InitialFrame_->color_.clone();
                 size_t sz = std::min(keypoints_curr_.size(), keypoints_prev_.size());
                 sz = good_matches.size();
                 cv::RNG rng(0);
@@ -112,7 +109,7 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
                                   keypoints_curr_[good_matches[t].trainIdx].pt,
                                   cv::Scalar(rng(256),rng(256),rng(256)), 2);
                 }
-                cv::imshow("features", src);
+                cv::imshow("InitialFrame", src);
 
                 vector<cv::Point2f> pts1;
                 vector<cv::Point2f> pts2;
@@ -131,7 +128,6 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
 
                 double lambda;
                 Mat inlierMask;
-                //Mat E = cv::findEssentialMat(pts1,pts2,curr_->camera_->mK,cv::RANSAC,0.999,1.0,inlierMask);
                 vector<bool> vbMatchesInliersF;
                 float score=0;
                 Mat F;
@@ -140,32 +136,48 @@ bool VisualOdometry::addFrame ( Frame::Ptr frame ) //Tracking module
                 F.convertTo(F,CV_32F);
 
                 //Mat lines;
-                drawepipolarlines("Epipolar lines", F, ref_->color_,curr_->color_,
+                drawepipolarlines("Epipolar lines", F, InitialFrame_->color_,curr_->color_,
                                   pts1,pts2);
+                cv::waitKey(30);
 
-                //vector<Eigen::Vector3d> vP3D;
-                vector<cv::Point3f> vP3D;
                 vector<bool> vbTriangulated;
                 if(FindMotion(F, curr_->camera_->mK,
                                            pts1, pts2,
                                            inlierMask, curr_->T_c_w_, // Output pose
-                                           vP3D, vbTriangulated, // Output Point, boolean
+                                           vIniP3D_, vbTriangulated, // Output Point, boolean
                                            1.0, 50))
                 {
-                    std::cout<<"Pose = "<<curr_->T_c_w_.rotation_matrix()<<"\n"<<curr_->T_c_w_.translation()<<std::endl;
+                    const Eigen::Matrix3d IniRotation = Eigen::Matrix3d::Identity();
+                    const Eigen::Vector3d IniTranslation = Eigen::Vector3d::Zero();
+                    InitialFrame_->T_c_w_ = SE3(IniRotation, IniTranslation);
+                    cout << "Initial Pose =" << endl
+                         << "R ="<<endl
+                         << InitialFrame_->T_c_w_.rotation_matrix()
+                         << "\n t = "<<std::endl
+                         << InitialFrame_->T_c_w_.translation()
+                         <<endl;
+                    cout << "Current Pose =" << endl
+                         << "R ="<<endl
+                         << curr_->T_c_w_.rotation_matrix()
+                         << "\n t = "<<std::endl
+                         << curr_->T_c_w_.translation()
+                         <<endl;
+
+                    cv::waitKey(0);
+                    // Current Frame is already Setted.
+                    //CreateInitialMapMonocular();
                 }
                 else
                 {
                     return false;
                 }
 
-
-                ref_ = curr_;
-                keypoints_prev_.clear();
-                for(int i=0; i< keypoints_curr_.size();i++)
-                    keypoints_prev_.push_back(keypoints_curr_[i]);
-                descriptors_prev_ = descriptors_curr_.clone();
-
+               // ref_ = curr_;
+               // keypoints_prev_.clear();
+               // for(int i=0; i< keypoints_curr_.size();i++)
+               //     keypoints_prev_.push_back(keypoints_curr_[i]);
+               // descriptors_prev_ = descriptors_curr_.clone();
+                return false;
             }
 
 
@@ -222,17 +234,15 @@ void VisualOdometry::extractKeyPoints()
 {
     boost::timer timer;
     orb_->detect ( curr_->color_, keypoints_curr_ );
-    //surf_->detect(curr_->color_, keypoints_curr_);
-    cout<<"extract keypoints cost time: "<<timer.elapsed() <<endl;
+    //cout<<"extract keypoints cost time: "<<timer.elapsed() <<endl;
 }
 
 void VisualOdometry::computeDescriptors()
 {
     boost::timer timer;
     orb_->compute ( curr_->color_, keypoints_curr_, descriptors_curr_);
-    //surf_desc_->compute(curr_->color_, keypoints_curr_,descriptors_curr_);
     descriptors_curr_.convertTo(descriptors_curr_, CV_32F);
-    cout<<"descriptor computation cost time: "<<timer.elapsed() <<endl;
+    //cout<<"descriptor computation cost time: "<<timer.elapsed() <<endl;
 }
 
 void VisualOdometry::featureMatching()
@@ -382,7 +392,7 @@ bool VisualOdometry::checkKeyFrame()
 
 void VisualOdometry::addKeyFrame()
 {
-    if ( map_->keyframes_.empty() )
+    if ( map_->keyframes_.empty()  )// Initial KeyFrame Insert !
     {
         // first key-frame, add all 3d points into map
         for ( size_t i=0; i<keypoints_curr_.size(); i++ )
@@ -499,14 +509,7 @@ bool VisualOdometry::FindMotion(const Mat& F, const Mat& K,
                 N++;
         }
 
-    //Cast cv-Mat to eigen-Matrix
     cv::Mat E = K.t()*F*K;
-    /*
-    cv::Mat Rz1 = cv::Mat::eye(3,3,CV_32F);
-    Rz1.at<float>(0,1) = -1;
-    Rz1.at<float>(1,0) = 1;
-    Rz1.at<float>(2,2) = 1;
-    */
 
     Mat R1, R2, t1, t2;
     cv::decomposeEssentialMat(E, R1, R2, t1);
@@ -534,11 +537,8 @@ bool VisualOdometry::FindMotion(const Mat& F, const Mat& K,
 
 
     int maxGood = max(nGood1, max(nGood2, max(nGood3, nGood4)));
-    if(maxGood >0)
-    {
-        cout<<"maxGood = "<<maxGood<<endl;
-    }
-        cout<<"maxGood = "<<maxGood<<endl;
+    cout<<"maxGood = "<<maxGood<<endl;
+
 
     int nMinGood = max(static_cast<int>(0.9*N), minTriangulated);
 
@@ -553,11 +553,12 @@ bool VisualOdometry::FindMotion(const Mat& F, const Mat& K,
     // reject initialization
     if( maxGood>nMinGood || nsimilar> 1)
     {
+        cout<<"--Ignore set:Ambiguous pose or Not enough triangulated pose"<<endl;
         return false;
     }
     Eigen::Matrix3d R;
     Eigen::Vector3d t;
-    if(maxGood == nGood1 && parallax1 > minParallax)
+    if( maxGood == nGood1 && parallax1 > minParallax)
     {
         vP3D = vP3D1;
         vbTriangulated = std::move(vbGood1);
@@ -590,7 +591,6 @@ bool VisualOdometry::FindMotion(const Mat& F, const Mat& K,
         return false;
     }
     pose = SE3(R,t);
-
     return true;
 }
 int VisualOdometry::countGoodDecompose(const cv::Mat& R,
@@ -1057,6 +1057,11 @@ void VisualOdometry::Triangulate(const cv::Point2f &p1, const cv::Point2f &p2, c
     x3D = vt.row(3).t();
     x3D = x3D.rowRange(0,3)/x3D.at<float>(3);
     x3D.convertTo(x3D, CV_32F);
+}
+
+void VisualOdometry::CreateInitialMapMonocular()
+{
+
 }
 
 }

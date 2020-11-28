@@ -22,6 +22,7 @@
 
 #include "myslam/common_include.h"
 #include "myslam/map.h"
+#include "myslam/frame.h"
 
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/sfm/fundamental.hpp>
@@ -33,7 +34,7 @@
 
 namespace myslam
 {
-class VisualOdometry
+class VisualOdometry: public enable_shared_from_this<VisualOdometry>
 {
 public:
     typedef shared_ptr<VisualOdometry> Ptr;
@@ -59,6 +60,10 @@ public:
 
     //Minwoo start
     cv::Ptr<cv::DescriptorMatcher> matcher;
+    Frame::Ptr InitialFrame_;
+    std::vector<cv::Point3f> vIniP3D_;
+
+
     //Minwoo end
     cv::FlannBasedMatcher   matcher_flann_;     // flann matcher
     vector<MapPoint::Ptr>   match_3dpts_;       // matched 3d points
@@ -139,6 +144,8 @@ void drawepipolarlines(const std::string& title, const cv::Mat &F,
                 const float inlierDistance = -1);
 float distancePointLine(const cv::Point2f& point, const cv::Point3f& line);
 void Triangulate(const cv::Point2f &p1, const cv::Point2f &p2, const cv::Mat &P1, const cv::Mat &P2, Mat &x3D);
+
+void CreateInitialMapMonocular();
 };
 }
 
