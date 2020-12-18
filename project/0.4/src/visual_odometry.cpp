@@ -69,8 +69,6 @@ bool VisualOdometry::addFrame (Frame::Ptr frame/*count 2*/ ) //Tracking module
                 InitialFrame_ = frame; // count 4
                 keypoints_prev_.clear();
                 keypoints_prev_ = std::move(keypoints_curr_);
-                //for(int i=0; i< keypoints_curr_.size();i++)
-                //    keypoints_prev_.push_back(keypoints_curr_[i]);
                 descriptors_prev_ = std::move(descriptors_curr_); // opencv 4.x supports move constructor and =operator for Mat class
                 return false;
             }
@@ -92,9 +90,9 @@ bool VisualOdometry::addFrame (Frame::Ptr frame/*count 2*/ ) //Tracking module
                     }
                 }
 
-                if(good_matches.size() < 10)
+                if(good_matches.size() < 100)
                 {
-                    InitialFrame_ = curr_;
+                    InitialFrame_ = static_cast<Frame::Ptr>(nullptr);
                     return false;
                 }
 
@@ -188,7 +186,7 @@ bool VisualOdometry::addFrame (Frame::Ptr frame/*count 2*/ ) //Tracking module
         keypoints_prev_.clear();
         for(int i=0; i< keypoints_curr_.size();i++)
             keypoints_prev_.push_back(keypoints_curr_[i]);
-        descriptors_prev_ = descriptors_curr_.clone();
+        descriptors_prev_ = std::move(descriptors_curr_); // may can occur problem
         break;
     }
     case OK:
@@ -319,18 +317,21 @@ void VisualOdometry::poseEstimationPnP()
 
     // using bundle adjustment to optimize the pose
     typedef g2o::BlockSolver<g2o::BlockSolverTraits<6,2>> Block;
-    Block::LinearSolverType* linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>();
-    Block* solver_ptr = new Block ( linearSolver );
-    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg ( solver_ptr );
-    g2o::SparseOptimizer optimizer;
-    optimizer.setAlgorithm ( solver );
+    std::unique_ptr<Block::LinearSolverType> linearSolver =// new g2o::LinearSolverDense<Block::PoseMatrixType>();
+    g2o::make_unique<g2o::LinearSolverDense<Block::PoseMatrixType>>();
+    std::unique_ptr<Block> solver_ptr = //new Block ( linearSolver );
+    g2o::make_unique<Block>(std::move(linearSolver));
+    g2o::OptimizationAlgorithm* solver = new g2o::OptimizationAlgorithmLevenberg(std::move(solver_ptr)  );
+
+    g2o::SparseOptimizer* optimizer = new g2o::SparseOptimizer;
+    optimizer->setAlgorithm ( solver );
 
     g2o::VertexSE3Expmap* pose = new g2o::VertexSE3Expmap();
     pose->setId ( 0 );
     pose->setEstimate ( g2o::SE3Quat (
         T_c_w_estimated_.rotation_matrix(), T_c_w_estimated_.translation()
     ));
-    optimizer.addVertex ( pose );
+    optimizer->addVertex ( pose );
 
     // edges
     for ( int i=0; i<inliers.rows; i++ )
@@ -344,13 +345,13 @@ void VisualOdometry::poseEstimationPnP()
         edge->point_ = Vector3d ( pts3d[index].x, pts3d[index].y, pts3d[index].z );
         edge->setMeasurement ( Vector2d ( pts2d[index].x, pts2d[index].y ) );
         edge->setInformation ( Eigen::Matrix2d::Identity() );
-        optimizer.addEdge ( edge );
+        optimizer->addEdge ( edge );
         // set the inlier map points
         match_3dpts_[index]->matched_times_++;
     }
 
-    optimizer.initializeOptimization();
-    optimizer.optimize ( 10 );
+    optimizer->initializeOptimization();
+    optimizer->optimize ( 10 );
 
     T_c_w_estimated_ = SE3 (
         pose->estimate().rotation(),

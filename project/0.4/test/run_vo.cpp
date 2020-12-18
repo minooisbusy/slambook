@@ -62,14 +62,18 @@ int main ( int argc, char** argv )
     bool bFirst = true;
     for ( int i=0; i<rgb_files.size(); i++ )
     {
+        /*
         if(i%5 != 0 && !bFirst)
         {
+            cout<<"1st="<<i%5<<endl;
+            cout<<std::boolalpha<<bFirst<<endl;
             continue;
         }
         else
         {
             bFirst = false;
         }
+        */
         cout<<"****** loop "<<i<<" ******"<<endl;
         Mat color = cv::imread ( rgb_files[i] );
         Mat depth = cv::imread ( depth_files[i], -1 ); // don't care
